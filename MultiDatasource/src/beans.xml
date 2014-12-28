@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="http://www.springframework.org/schema/beans" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:tx="http://www.springframework.org/schema/tx" xmlns:aop="http://www.springframework.org/schema/aop"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+	http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+	http://www.springframework.org/schema/tx
+	http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+	http://www.springframework.org/schema/aop
+	http://www.springframework.org/schema/aop/spring-aop-4.0.xsd">
+
+	<!-- 数据源相同的内容 -->
+	<!-- <bean id="parentDataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource" 
+		destroy-method="close"> <property name="driverClassName" value="com.mysql.jdbc.Driver"> 
+		</property> <property name="username" value="root"> </property> <property 
+		name="password" value="root123"> </property> </bean> -->
+
+	<bean class="org.springframework.jdbc.datasource.DriverManagerDataSource"
+		id="parentDataSource">
+		<property name="driverClassName" value="com.mysql.jdbc.Driver">
+		</property>
+		<property name="username">
+			<value>root</value>
+		</property>
+		<property name="password">
+			<value>root123</value>
+		</property>
+	</bean>
+
+	<!-- 数据库test -->
+	<bean parent="parentDataSource" id="adminDataSource">
+		<property name="url">
+			<value>jdbc:mysql://localhost:3306/test</value>
+		</property>
+	</bean>
+	<!-- 数据库test1 -->
+	<bean parent="parentDataSource" id="userDataSource">
+		<property name="url">
+			<value>jdbc:mysql://localhost:3306/testdb</value>
+		</property>
+	</bean>
+
+	<!-- 编写spring 配置文件的配置多数源映射关系 -->
+	<bean class="com.ds.DynamicDataSource" id="dataSource">
+		<property name="targetDataSources">
+			<map key-type="java.lang.String">
+				<entry value-ref="adminDataSource" key="admin"></entry>
+				<entry value-ref="userDataSource" key="user"></entry>
+			</map>
+		</property>
+		<property name="defaultTargetDataSource" ref="adminDataSource">
+		</property>
+	</bean>
+
+	<!-- sessionFactory的配置 -->
+	<bean class="org.springframework.orm.hibernate4.LocalSessionFactoryBean"
+		id="sessionFactory">
+		<property name="dataSource" ref="dataSource">
+		</property>
+		<!-- 实体映射资源 -->
+		<property name="mappingResources">
+			<list>
+				<value>com/entity/User.hbm.xml</value>
+			</list>
+		</property>
+
+
+		<!-- 定义Hibernate SessionFactory的属性 -->
+		<property name="hibernateProperties">
+			<props>
+				<!-- 指定Hibernate的连接方言 -->
+				<prop key="hibernate.dialect">
+					org.hibernate.dialect.MySQL5InnoDBDialect
+				</prop>
+				<!--是否根据Hiberante映射创建数据表 -->
+				<prop key="hibernate.hbm2ddl.auto">update</prop>
+				<prop key="hibernate.show_sql">true</prop>
+				<prop key="hibernate.format_sql">true</prop>
+
+				<prop key="hibernate.connection.autocommit">false</prop>
+				<prop key="hibernate.cache.use_query_cache">false</prop>
+				<prop key="hibernate.max_fetch_depth">2</prop>
+				<prop key="hibernate.bytecode.use_reflection_optimizer">true</prop>
+
+			</props>
+		</property>
+	</bean>
+
+	<bean id="userService" class="com.service.impl.UserServiceImpl">
+		<property name="userDao" ref="userDao"></property>
+	</bean>
+
+	<bean id="userDao" class="com.app.dao.impl.UserDaoImpl">
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean>
+
+	<!-- 配置Hibernate的局部事务管理器，使用HibernateTransactionManager类 -->
+	<!-- 该类是PlatformTransactionManager接口针对采用Hibernate的特定实现类 -->
+	<!-- 配置HibernateTransactionManager需依赖注入SessionFactory -->
+	<bean id="transactionManager"
+		class="org.springframework.orm.hibernate4.HibernateTransactionManager"
+		p:sessionFactory-ref="sessionFactory" />
+
+	<!-- 配置事务增强处理Bean,指定事务管理器 -->
+	<tx:advice id="txAdvice" transaction-manager="transactionManager">
+		<!-- 用于配置详细的事务定义 -->
+		<tx:attributes>
+			<!-- 所有以'get'开头的方法是read-only的 -->
+			<tx:method name="get*" read-only="true"/>
+			<!-- 其他方法使用默认的事务设置，指定超时时长为5秒 -->
+			<tx:method name="*" isolation="DEFAULT"
+				propagation="REQUIRED" timeout="5"/>
+		</tx:attributes>
+	</tx:advice>
+	<!-- AOP配置的元素 -->
+	<aop:config>
+		<!-- 配置一个切入点 -->
+		<aop:pointcut id="myPointcut" expression="execution(* com.app.dao.impl.*Impl.*(..))" />
+		<!-- 指定在myPointcut切入点应用txAdvice事务增强处理 -->
+		<aop:advisor advice-ref="txAdvice" pointcut-ref="myPointcut" />
+	</aop:config>
+</beans>
